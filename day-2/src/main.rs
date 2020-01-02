@@ -8,11 +8,27 @@ fn main() {
 
     let contents = fs::read_to_string(path).expect("Failed to read contents of file");
 
-    let mut instr : Vec<i32> = parse_instructions(contents);
-    correct_program(&mut instr);
+    let original_memory : Vec<i32> = parse_instructions(contents);
 
-    let result = run_program(instr)[0];
-    println!("Position 0 contains: {}", result);
+    // Part One
+    let mut program_memory = original_memory.clone();
+    correct_program(&mut program_memory);
+    let answer_1 = run_program(program_memory)[0];
+    println!("Part One: Position 0 contains {}", answer_1);
+
+    // Part Two
+    for noun in 0..99 {
+        for verb in 0..99 {
+            let mut program_memory = original_memory.clone();
+            alter_program(&mut program_memory, noun, verb);
+            let result_memory = run_program(program_memory);
+            let result = result_memory[0];
+            if result == 19690720 {
+                let answer_2 = (100 * result_memory[1]) + result_memory[2];
+                println!("Part two: noun = {}, verb = {} and answer = {}", noun, verb, answer_2);
+            }
+        }
+    }
 }
 
 fn parse_instructions(contents : String) -> Vec<i32> {
@@ -22,6 +38,11 @@ fn parse_instructions(contents : String) -> Vec<i32> {
 fn correct_program(instr : &mut Vec<i32>) -> () {
     instr[1] = 12;
     instr[2] = 2;
+}
+
+fn alter_program(instr : &mut Vec<i32>, i : i32, j : i32) -> () {
+    instr[1] = i;
+    instr[2] = j;
 }
 
 fn run_program(instr : Vec<i32>) -> Vec<i32> {
@@ -79,8 +100,6 @@ impl Program {
 
     fn op_exit(&mut self) {
         self.finished = true;
-//        let outcome : String = self.instructions;
-        println!("{:?}",self.instructions);
     }
 }
 
