@@ -38,6 +38,7 @@ fn is_within_range(number : i32, range_from : i32, range_to : i32) -> bool {
 }
 
 fn has_two_adjacent(number : i32) -> bool {
+    // bleh, rust regex does not support look-around and back-references...
 //    let re = Regex::new(r"^\d*((\d)\2)\d*$").unwrap();
 //    re.is_match(number.to_string().as_str())
     let text = number.to_string();
