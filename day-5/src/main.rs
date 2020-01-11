@@ -1,5 +1,6 @@
 use std::{fs, env};
 use std::collections::HashMap;
+use std::borrow::Borrow;
 
 fn main() {
     let args : Vec<String> = env::args().collect();
@@ -14,7 +15,9 @@ fn main() {
         finished: false,
         memory: vec![]
     };
+    automaton.init();
     automaton.load(contents.as_str());
+    automaton.run();
 }
 
 struct InstructionDef {
@@ -22,31 +25,24 @@ struct InstructionDef {
     no_params : i8,
 }
 
-struct InstructionSet {
-    set : HashMap<i8, InstructionDef>,
-}
-
-struct Program {
-//    instructions : Vec<Instruction>,
-}
-
 struct Instruction {
     opcode : i8,
     params : Vec<Parameter>,
 }
 
+#[derive(Debug)]
 struct Parameter {
-    param : i8,
+    param : i32,
     mode : ParameterMode,
 }
 
+#[derive(Debug)]
 enum ParameterMode {
     Position = 0,
     Immediate = 1,
 }
 
 struct Automaton {
-//    operations : HashMap<i8, Operation>,
     instruction_set : HashMap<i8, InstructionDef>,
     pc : usize,
     finished : bool,
@@ -56,8 +52,8 @@ struct Automaton {
 impl Automaton {
 
     fn init(&mut self) {
-        self.instruction_set.insert(1, InstructionDef {opcode : 1, no_params : 2});
-        self.instruction_set.insert(2, InstructionDef {opcode : 2, no_params : 2});
+        self.instruction_set.insert(1, InstructionDef {opcode : 1, no_params : 3});
+        self.instruction_set.insert(2, InstructionDef {opcode : 2, no_params : 3});
         self.instruction_set.insert(3, InstructionDef {opcode : 3, no_params : 1});
         self.instruction_set.insert(4, InstructionDef {opcode : 4, no_params : 1});
         self.instruction_set.insert(99, InstructionDef {opcode : 99, no_params : 0});
@@ -83,7 +79,7 @@ impl Automaton {
         let mut params = Vec::new();
         for i in 1..=(self.instruction_set.get(&opcode).unwrap().no_params as usize) {
             params.push(Parameter {
-                param : *self.memory.get(self.pc + i).unwrap() as i8,
+                param : *self.memory.get(self.pc + i).unwrap(),
                 mode : ParameterMode::Position,
             });
         };
@@ -95,17 +91,20 @@ impl Automaton {
 
     fn decode_extended(&self, val: &i32) -> Instruction {
         let mut op_extended = val.to_string().chars().rev().collect::<String>();
-        if op_extended.len() == 4 {
+        while op_extended.len() < 5 {
             op_extended.push('0');
         }
         let op_extended = op_extended.chars().rev().collect::<String>();
         let opcode = &op_extended[3..=4].parse::<i8>().ok().unwrap();
+
         let mut params = Vec::new();
-        for i in 0..=(self.instruction_set.get(&opcode).unwrap().no_params as usize) {
-            let index = 2-i;
+        for i in 1..=(self.instruction_set.get(&opcode).unwrap().no_params as usize) {
+            let index = 3-i;
             let param_mode = &op_extended[index..=index].parse().ok().unwrap();
+            let param = *self.memory.get(self.pc + i).unwrap();
+
             params.push(Parameter {
-                param : *self.memory.get(self.pc + i).unwrap() as i8,
+                param,
                 mode : match param_mode {
                     0 => ParameterMode::Position,
                     1 => ParameterMode::Immediate,
@@ -130,62 +129,80 @@ impl Automaton {
         &self.memory
     }
 
+    fn read_input(&self) -> i32 {
+        1
+    }
+
     fn do_operation(&mut self, instruction : &Instruction) -> &Self {
-        let pc_increment : usize;
         match instruction.opcode {
-            1 => pc_increment = self.op_add(),
-            2 => pc_increment = self.op_mult(),
-            3 => pc_increment = self.op_input(),
-            4 => pc_increment = self.op_output(),
-            99 => pc_increment = self.op_exit(),
-            _ => pc_increment = 0
+            1 => self.op_add(instruction),
+            2 => self.op_mult(instruction),
+            3 => self.op_input(instruction),
+            4 => self.op_output(instruction),
+            99 => self.op_exit(),
+            _ => (),
         }
 
-        self.pc += pc_increment;
+        self.pc += self.get_increment_for_opcode(&instruction.opcode);
 
         self
     }
 
-    fn op_add(&mut self) -> usize {
-        // TODO support immediate mode params
-        let op1 = self.memory.get(*self.memory.get(self.pc + 1).unwrap() as usize).unwrap();
-        let op2 = self.memory.get(*self.memory.get(self.pc + 2).unwrap() as usize).unwrap();
-        let address = *self.memory.get(self.pc + 3).unwrap() as usize;
-        self.memory[address] = op1 + op2;
-
-        4
+    fn get_param_value<'a>(&'a self, instr : &'a Instruction, param_index: usize) -> &'a i32 {
+        match instr.params.get(param_index).unwrap().mode {
+            ParameterMode::Position => self.memory.get(instr.params.get(param_index).unwrap().param as usize).unwrap(),
+            ParameterMode::Immediate => instr.params.get(param_index).unwrap().param.borrow(),
+        }
+    }
+    fn get_address_value<'a>(&'a self, instr : &'a Instruction, param_index: usize) -> &'a i32 {
+        instr.params.get(param_index).unwrap().param.borrow()
     }
 
-    fn op_mult(&mut self) -> usize {
-        // TODO support immediate mode params
-        let op1 = self.memory.get(*self.memory.get(self.pc + 1).unwrap() as usize).unwrap();
-        let op2 = self.memory.get(*self.memory.get(self.pc + 2).unwrap() as usize).unwrap();
-        let address = *self.memory.get(self.pc + 3).unwrap() as usize;
-        self.memory[address] = op1 * op2;
-
-        4
+    fn get_increment_for_opcode(&self, opcode : &i8) -> usize {
+        (self.instruction_set.get(opcode).unwrap().no_params + 1) as usize
     }
 
-    fn op_input(&mut self) -> usize {
-        // TODO support immediate mode params
-        let address = self.memory.get(*self.memory.get(self.pc + 1).unwrap() as usize).unwrap();
-        unimplemented!();
-
-        2
+    fn op_add(&mut self, instr : &Instruction) {
+        let result;
+        let address;
+        {
+            let op1 = self.get_param_value(instr, 0);
+            let op2 = self.get_param_value(instr, 1);
+            address = *self.get_address_value(instr, 2) as usize;
+            result = op1 + op2;
+//            println!("add: opcode {} - op1 {} - op2 {} - address {} => {}", instr.opcode, op1, op2, address, result);
+        }
+        self.memory[address] = result;
     }
 
-    fn op_output(&mut self) -> usize {
-        // TODO support immediate mode params
-        let address = self.memory.get(*self.memory.get(self.pc + 1).unwrap() as usize).unwrap();
-        unimplemented!();
-
-        2
+    fn op_mult(&mut self, instr : &Instruction) {
+        let result;
+        let address;
+        {
+            let op1 = self.get_param_value(instr, 0);
+            let op2 = self.get_param_value(instr, 1);
+            address = *self.get_address_value(instr, 2) as usize;
+            result = op1 * op2;
+//            println!("mul: opcode {} - op1 {} - op2 {} - address {} => {}", instr.opcode, op1, op2, address, result);
+        }
+        self.memory[address] = result;
     }
 
-    fn op_exit(&mut self)  -> usize {
+    fn op_input(&mut self, instr : &Instruction) {
+        let address = *self.get_address_value(instr, 0) as usize;
+        self.memory[address] = self.read_input();
+
+//        println!("input: opcode {} - address {} => {}", instr.opcode, address, self.memory[address]);
+    }
+
+    fn op_output(&mut self, instr : &Instruction) {
+        let address = *self.get_address_value(instr, 0) as usize;
+        println!("{}", self.memory[address]);
+    }
+
+    fn op_exit(&mut self) {
         self.finished = true;
-
-        0
+        println!("halt");
     }
 }
 
@@ -262,6 +279,20 @@ mod tests {
         automaton.load("1002,4,3,4,33");
         automaton.run();
         assert_eq!(*automaton.dump_memory(), vec![1002,4,3,4,99]);
+    }
+
+    #[test]
+    fn test_negative_values() {
+        let mut automaton = Automaton {
+            instruction_set: HashMap::new(),
+            pc: 0,
+            finished: false,
+            memory: vec![]
+        };
+        automaton.init();
+        automaton.load("1101,100,-1,4,0");
+        automaton.run();
+        assert_eq!(*automaton.dump_memory(), vec![1101,100,-1,4,99]);
     }
 
 }
